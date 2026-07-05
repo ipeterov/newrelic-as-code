@@ -1,0 +1,124 @@
+[project]
+name = "newrelic-as-code"
+# Changing the version automatically publishes to PyPI (see DEVELOPMENT.md)
+version = "0.1.0"
+description = "Define New Relic dashboards as code and reconcile them to an account"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Ilia Peterov", email = "ipeterov1@gmail.com" }]
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "requests>=2.26",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/ipeterov/newrelic-as-code"
+Repository = "https://github.com/ipeterov/newrelic-as-code"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "newrelic_as_code/",
+    "README.md",
+    "LICENSE",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["newrelic_as_code"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1",
+    "ruff>=0.15",
+]
+
+[tool.pytest.ini_options]
+addopts = "--tb=short"
+
+[tool.ruff]
+line-length = 100  # Soft target
+
+[tool.ruff.lint]
+unfixable = ["F401"]
+select = [
+    "E",
+    "W",
+    "F",
+    "ERA",
+    "I",
+    "ASYNC",
+    "S",
+    "BLE",
+    "B",
+    "A",
+    "C4",
+    "DTZ",
+    "T10",
+    "EXE",
+    "ISC",
+    "INP",
+    "PIE",
+    "T20",
+    "LOG",
+    "G",
+    "RSE",
+    "RET",
+    "SLF",
+    "SIM",
+    "SLOT",
+    "TC",
+    "PTH",
+    "C90",
+    "N",
+    "PGH",
+    "PL",
+    "UP",
+    "FURB",
+    "RUF",
+]
+ignore = [
+    "E501",  # don't enforce line length - just try to fit in 100 chars when formatting
+    "G004",  # f-strings are better than clunky logging.basicConfig
+    "PLC0415",  # dynamic imports are ok to avoid circular
+    "PLC0414",  # conflicts with F401 explicit re-export
+    "SIM103",  # I don't like simplifying the last condition with early return pattern
+    "SIM108",  # Ternaries can be less readable - I want to decide myself
+    "N815",  # can't enforce this for external APIs, and I already follow it
+    "S101",  # asserts are totally normal in pytest
+    "PLR0913",  # totally normal in pytest to have lots of args (fixtures)
+    "PLR2004",  # too sensitive to normal magic constants in tests
+    "N818",  # not every exception is an error
+    "C901",
+    "PLR0911",
+    "PLR0912",
+    "PLR0915",
+    "TC001",  # those break libs that rely on type inspection
+    "TC002",
+    "TC003",
+    "UP037",
+]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+force-wrap-aliases = true
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+# Reconcile tests deliberately reach into private reconcile internals.
+"tests/**" = ["SLF001"]
