@@ -2,14 +2,14 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .models import Dashboard, NrqlQuery, Page, Variable, Visualization, Widget
-from .updater import (
+from .client import (
     EU_ENDPOINT,
     US_ENDPOINT,
     NerdGraphClient,
-    NewRelicUpdater,
     NewRelicUpdaterError,
 )
+from .models import Dashboard, NrqlQuery, Page, Variable, Visualization, Widget
+from .updater import NewRelicUpdater
 from .utils import echo
 
 
