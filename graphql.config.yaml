@@ -1,0 +1,17 @@
+# GraphQL configuration for IDE support (PyCharm, VSCode, etc.)
+# See: https://github.com/JetBrains/js-graphql-intellij-plugin
+#
+# This drives the `# language=graphql` injections in the source: the injected
+# NerdGraph queries validate and autocomplete against the real schema.
+
+projects:
+  # New Relic NerdGraph API — used for dashboards (and, later, alerts) as code.
+  # The schema is introspected from a NerdGraph endpoint (any region works; the
+  # schema is region-agnostic) and is not committed — it is large and
+  # regenerated locally. Requires a New Relic User API key. Refresh with:
+  #   npx get-graphql-schema --header "API-Key=$NEW_RELIC_API_KEY" \
+  #     https://api.newrelic.com/graphql > nerdgraph.schema.graphql
+  nerdgraph:
+    schema: nerdgraph.schema.graphql
+    documents:
+      - newrelic_as_code/**/*.py

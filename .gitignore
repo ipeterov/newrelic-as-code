@@ -12,3 +12,7 @@ build/
 .DS_Store
 .idea/
 .vscode/
+
+# Introspected NerdGraph schema for IDE GraphQL support (see graphql.config.yaml);
+# large and regenerated locally, never committed.
+nerdgraph.schema.graphql
