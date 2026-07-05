@@ -26,6 +26,23 @@ jobs:
 
       - run: uv run ruff format --check
 
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.13', '3.14']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v8.3.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - run: uv sync --group dev
+
+      - run: uv run pytest
+
   check-version:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -53,7 +70,7 @@ jobs:
           pyproject-path: pyproject.toml
 
   publish:
-    needs: [lint, check-version]
+    needs: [lint, test, check-version]
     if: needs.check-version.outputs.should-publish == 'true'
     runs-on: ubuntu-latest
     environment: pypi
