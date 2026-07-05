@@ -1,7 +1,7 @@
 [project]
 name = "newrelic-as-code"
 # Changing the version automatically publishes to PyPI (see DEVELOPMENT.md)
-version = "0.1.0"
+version = "0.2.0"
 description = "Define New Relic dashboards as code and reconcile them to an account"
 readme = "README.md"
 license = "MIT"
