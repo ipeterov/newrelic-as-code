@@ -97,6 +97,7 @@ ignore = [
     "G004",  # f-strings are better than clunky logging.basicConfig
     "PLC0415",  # dynamic imports are ok to avoid circular
     "PLC0414",  # conflicts with F401 explicit re-export
+    "RUF012",  # pydantic deep-copies field defaults, so mutable {} defaults are safe
     "SIM103",  # I don't like simplifying the last condition with early return pattern
     "SIM108",  # Ternaries can be less readable - I want to decide myself
     "N815",  # can't enforce this for external APIs, and I already follow it
@@ -120,5 +121,8 @@ force-wrap-aliases = true
 combine-as-imports = true
 
 [tool.ruff.lint.per-file-ignores]
+# The public-API __all__ is grouped by concern (with comments) as documentation,
+# not sorted alphabetically.
+"newrelic_as_code/__init__.py" = ["RUF022"]
 # Reconcile tests deliberately reach into private reconcile internals.
 "tests/**" = ["SLF001"]

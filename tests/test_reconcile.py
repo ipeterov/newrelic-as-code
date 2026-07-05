@@ -117,7 +117,7 @@ def test_dry_run_makes_no_mutations():
 
 
 def test_account_id_injected_into_account_less_queries():
-    from newrelic_as_code import NrqlQuery, Widget
+    from newrelic_as_code import Layout, LineWidget, NrqlQuery
 
     dash = Dashboard(
         name="D",
@@ -125,12 +125,10 @@ def test_account_id_injected_into_account_less_queries():
             Page(
                 name="p",
                 widgets=[
-                    Widget(
+                    LineWidget(
                         title="w",
-                        visualization="viz.line",
-                        column=1,
-                        row=1,
-                        queries=[
+                        layout=Layout(column=1, row=1),
+                        nrql_queries=[
                             NrqlQuery(query="SELECT 1"),  # no account -> injected
                             NrqlQuery(query="SELECT 2", account_ids=[999]),  # kept
                         ],
@@ -142,5 +140,5 @@ def test_account_id_injected_into_account_less_queries():
     updater = FakeUpdater(existing=[])
     payload = updater._dashboard_input(dash)
     nrqls = payload["pages"][0]["widgets"][0]["rawConfiguration"]["nrqlQueries"]
-    assert nrqls[0]["accountIds"] == [1]
-    assert nrqls[1]["accountIds"] == [999]
+    assert nrqls[0]["accountId"] == 1  # singular, injected
+    assert nrqls[1]["accountIds"] == [999]  # explicit multi-account kept

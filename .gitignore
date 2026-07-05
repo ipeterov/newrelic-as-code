@@ -16,3 +16,7 @@ build/
 # Introspected NerdGraph schema for IDE GraphQL support (see graphql.config.yaml);
 # large and regenerated locally, never committed.
 nerdgraph.schema.graphql
+
+# Local reference copy of New Relic's Terraform provider widget-config source
+# (see CLAUDE.md) — fetched to diff rawConfiguration keys against; not committed.
+structures_newrelic_one_dashboard.go

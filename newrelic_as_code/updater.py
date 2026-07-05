@@ -18,7 +18,7 @@ delete callables — without reshaping the logic here.
 from collections.abc import Callable
 
 from .client import US_ENDPOINT, NerdGraphClient, NewRelicUpdaterError
-from .models import Dashboard
+from .models.dashboard import Dashboard
 from .utils import echo
 
 
@@ -168,8 +168,10 @@ class NewRelicUpdater:
         for page in payload["pages"]:
             for widget in page["widgets"]:
                 for nrql in widget["rawConfiguration"].get("nrqlQueries", []):
-                    if not nrql["accountIds"]:
-                        nrql["accountIds"] = [self.account_id]
+                    # A query that set neither accountId nor accountIds inherits
+                    # the updater's account.
+                    if not nrql.get("accountId") and not nrql.get("accountIds"):
+                        nrql["accountId"] = self.account_id
         return payload
 
     # language=graphql
