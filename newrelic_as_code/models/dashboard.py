@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import ConfigDict
 
-from .base import NrModel
+from .base import NrModel, NrResource
 from .variable import Variable
 from .widget import Widget, _WidgetEnvelope
 
@@ -37,7 +37,7 @@ class Page(NrModel):
         return result
 
 
-class Dashboard(NrModel):
+class Dashboard(NrResource):
     name: str
     pages: list[Page]
     description: str | None = None

@@ -7,17 +7,25 @@ store — managed entities are found by a ``managed-by`` tag, so there is nothin
 to persist between runs.
 
 The thin API transport is ``NerdGraphClient`` (see ``client.py``);
-``NewRelicUpdater.sync()`` reconciles everything on top of it. The reconcile
-core (``_reconcile``) is resource-agnostic:
-find-by-managed-tag, create/update/delete-orphaned, refuse-to-clobber-unmanaged,
-dry-run. Dashboards use it today; alert policies/conditions can be added as more
-``sync_*`` steps that call the same core with alert-specific find/create/update/
-delete callables — without reshaping the logic here.
+``NewRelicUpdater.sync()`` reconciles everything on top of it. The whole rollout
+is two passes over the resource kinds, in dependency order (a resource only
+ever references kinds that come before it):
+
+1. create or update every defined resource, kind by kind;
+2. delete every managed resource that is no longer defined, in reverse order —
+   so nothing is deleted while something defined still references it.
+
+The reconcile core (``_reconcile``) is resource-agnostic: given how to find the
+live resources of one kind, it upserts the defined ones and queues the orphaned
+ones for deletion.
 """
 
-from collections.abc import Callable
+import warnings
+from collections.abc import Callable, Iterable
+from typing import Protocol, TypeVar
 
 from .client import US_ENDPOINT, NerdGraphClient, NewRelicUpdaterError
+from .models.base import NrModel, NrResource
 from .models.dashboard import Dashboard
 from .utils import echo
 
@@ -25,12 +33,22 @@ from .utils import echo
 DEFAULT_MANAGED_TAG_KEY = "managed-by"
 
 
+class _Named(Protocol):
+    name: str
+
+
+R = TypeVar("R", bound=_Named)
+T = TypeVar("T", bound=NrResource)
+
+# A queued deletion, run in the second pass of ``sync()``.
+Delete = Callable[[], None]
+
+
 class NewRelicUpdater:
     """Reconciles New Relic with the code definitions.
 
-    ``sync()`` is the single entry point. It reconciles dashboards today; alert
-    policies/conditions can be added as more ``_sync_*`` steps that reuse
-    ``_reconcile``.
+    ``sync()`` is the single entry point; it runs one ``_sync_*`` step per
+    resource kind, each built on ``_reconcile``.
     """
 
     def __init__(
@@ -47,10 +65,36 @@ class NewRelicUpdater:
         self.managed_tag_value = managed_tag_value
         self.client = NerdGraphClient(api_key, endpoint, dry_run)
 
-    def sync(self, dashboards: list[Dashboard]) -> None:
+    def sync(
+        self,
+        resources: Iterable[NrResource] = (),
+        *,
+        dashboards: Iterable[Dashboard] | None = None,
+    ) -> None:
+        """Make the managed resources in the account exactly ``resources``.
+
+        ``resources`` is the complete desired state: every resource passed, plus
+        every resource those reference, is created or updated; every managed
+        resource not among them is deleted.
+
+        ``dashboards=`` is the pre-alerts spelling of the same thing, kept for
+        backwards compatibility.
+        """
+        if dashboards is not None:
+            warnings.warn(
+                "sync(dashboards=...) is deprecated; pass them as sync([...]) instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            resources = [*resources, *dashboards]
+        defined = _collect(resources)
+
         if self.client.dry_run:
             echo("Dry run — no changes will be applied")
-        self._sync_dashboards(dashboards)
+        deletes: list[Delete] = []
+        self._sync_dashboards(_of_type(defined, Dashboard), deletes)
+        for delete in reversed(deletes):
+            delete()
         echo("OK")
 
     # -- Generic reconcile core ----------------------------------------------
@@ -58,38 +102,91 @@ class NewRelicUpdater:
     def _reconcile(
         self,
         kind: str,
-        entity_type: str,
-        defined: dict[str, object],
-        create: Callable[[object], None],
-        update: Callable[[str, object], None],
+        defined: dict[str, R],
+        find: Callable[[str], str | None],
+        managed: Callable[[], Iterable[tuple[str, str]]],
+        create: Callable[[R], str],
+        update: Callable[[str, R], None],
         delete: Callable[[str], None],
-    ) -> None:
-        """Reconcile a set of managed resources of one ``entity_type``.
+        deletes: list[Delete],
+    ) -> dict[str, str | None]:
+        """Reconcile one set of managed resources of a single kind.
 
-        ``defined`` maps resource name -> the resource object to apply. For each,
-        we look up the existing managed entity (refusing to clobber a same-named
-        unmanaged one), then create or update. Finally, any managed entity of
-        this type no longer in ``defined`` is deleted as orphaned.
+        ``defined`` maps resource name -> the resource object to apply. For
+        each, ``find(name)`` returns the id of the existing managed resource (or
+        None, or raises if it must not be touched); we update it or create a new
+        one. Every ``(name, id)`` from ``managed()`` that is no longer in
+        ``defined`` is queued onto ``deletes`` as orphaned.
 
-        Resource-agnostic: dashboards pass their find/create/update/delete;
-        alerts can pass their own without reshaping this logic.
+        Returns name -> id for every defined resource: the existing id for
+        updates, ``create``'s result for creates (None for a dry-run create).
         """
+        ids: dict[str, str | None] = {}
         for name, resource in defined.items():
-            existing = self._find_entity(name, entity_type)
+            existing = find(name)
             if existing:
                 self.client.mutate(
-                    f"update “{name}”",
-                    lambda r=resource, g=existing["guid"]: update(g, r),
+                    f"update {kind} “{name}”",
+                    lambda r=resource, i=existing: update(i, r),
                 )
+                ids[name] = existing
             else:
-                self.client.mutate(f"create “{name}”", lambda r=resource: create(r))
-
-        for entity in self._managed_entities(entity_type):
-            if entity["name"] not in defined:
-                self.client.mutate(
-                    f"delete orphaned {kind} “{entity['name']}”",
-                    lambda g=entity["guid"]: delete(g),
+                ids[name] = self.client.mutate(
+                    f"create {kind} “{name}”", lambda r=resource: create(r)
                 )
+
+        for name, resource_id in managed():
+            if name not in defined:
+                deletes.append(
+                    lambda n=name, i=resource_id: self.client.mutate(
+                        f"delete orphaned {kind} “{n}”", lambda: delete(i)
+                    )
+                )
+        return ids
+
+    @staticmethod
+    def _by_name(items: Iterable[R], kind: str) -> dict[str, R]:
+        """Index resources by name, refusing duplicates (they'd be ambiguous)."""
+        result: dict[str, R] = {}
+        for item in items:
+            if item.name in result:
+                raise NewRelicUpdaterError(f"Duplicate {kind} name '{item.name}' in definitions")
+            result[item.name] = item
+        return result
+
+    def _reconcile_entities(
+        self,
+        kind: str,
+        entity_type: str,
+        items: list[R],
+        create: Callable[[R], str],
+        update: Callable[[str, R], None],
+        delete: Callable[[str], None],
+        deletes: list[Delete],
+    ) -> dict[str, str | None]:
+        """``_reconcile`` for resources owned via the managed tag.
+
+        Resources are identified by entity GUID; ``create`` must return the new
+        entity's GUID (and tag it, see ``_tag_managed``).
+        """
+
+        def find(name: str) -> str | None:
+            entity = self._find_entity(name, entity_type)
+            return entity["guid"] if entity else None
+
+        def managed() -> list[tuple[str, str]]:
+            return [(e["name"], e["guid"]) for e in self._managed_entities(entity_type)]
+
+        return self._reconcile(
+            kind=kind,
+            defined=self._by_name(items, kind),
+            find=find,
+            managed=managed,
+            create=create,
+            update=update,
+            delete=delete,
+            deletes=deletes,
+        )
 
     # language=graphql
     _SEARCH = """
@@ -148,18 +245,43 @@ class NewRelicUpdater:
             )
         return entity
 
+    # language=graphql
+    _TAG = """
+    mutation ($guid: EntityGuid!, $tags: [TaggingTagInput!]!) {
+      taggingAddTagsToEntity(guid: $guid, tags: $tags) {
+        errors {
+          message
+          type
+        }
+      }
+    }
+    """
+
+    def _tag_managed(self, guid: str) -> None:
+        """Tag a freshly created entity so future runs recognize it as ours."""
+        data = self.client.call(
+            self._TAG,
+            {
+                "guid": guid,
+                "tags": [{"key": self.managed_tag_key, "values": [self.managed_tag_value]}],
+            },
+        )
+        if data["taggingAddTagsToEntity"]["errors"]:
+            raise NewRelicUpdaterError(
+                f"taggingAddTagsToEntity: {data['taggingAddTagsToEntity']['errors']}"
+            )
+
     # -- Dashboards -----------------------------------------------------------
 
-    def _sync_dashboards(self, dashboards: list[Dashboard]) -> None:
-        """Upsert defined dashboards, then delete managed ones no longer defined."""
-        defined = {d.name: d for d in dashboards}
-        self._reconcile(
+    def _sync_dashboards(self, dashboards: list[Dashboard], deletes: list[Delete]) -> None:
+        self._reconcile_entities(
             kind="dashboard",
             entity_type="DASHBOARD",
-            defined=defined,
+            items=dashboards,
             create=self._create_dashboard,
             update=self._update_dashboard,
             delete=self._delete_dashboard,
+            deletes=deletes,
         )
 
     def _dashboard_input(self, dashboard: Dashboard) -> dict:
@@ -175,7 +297,7 @@ class NewRelicUpdater:
         return payload
 
     # language=graphql
-    _CREATE = """
+    _DASHBOARD_CREATE = """
     mutation ($accountId: Int!, $dashboard: DashboardInput!) {
       dashboardCreate(accountId: $accountId, dashboard: $dashboard) {
         entityResult {
@@ -189,42 +311,20 @@ class NewRelicUpdater:
     }
     """
 
-    # language=graphql
-    _TAG = """
-    mutation ($guid: EntityGuid!, $tags: [TaggingTagInput!]!) {
-      taggingAddTagsToEntity(guid: $guid, tags: $tags) {
-        errors {
-          message
-          type
-        }
-      }
-    }
-    """
-
-    def _create_dashboard(self, dashboard: Dashboard) -> None:
+    def _create_dashboard(self, dashboard: Dashboard) -> str:
         data = self.client.call(
-            self._CREATE,
+            self._DASHBOARD_CREATE,
             {"accountId": self.account_id, "dashboard": self._dashboard_input(dashboard)},
         )
         result = data["dashboardCreate"]
         if result["errors"]:
             raise NewRelicUpdaterError(f"dashboardCreate: {result['errors']}")
         guid = result["entityResult"]["guid"]
-        # Tag it so future runs recognize it as ours.
-        tag_data = self.client.call(
-            self._TAG,
-            {
-                "guid": guid,
-                "tags": [{"key": self.managed_tag_key, "values": [self.managed_tag_value]}],
-            },
-        )
-        if tag_data["taggingAddTagsToEntity"]["errors"]:
-            raise NewRelicUpdaterError(
-                f"taggingAddTagsToEntity: {tag_data['taggingAddTagsToEntity']['errors']}"
-            )
+        self._tag_managed(guid)
+        return guid
 
     # language=graphql
-    _UPDATE = """
+    _DASHBOARD_UPDATE = """
     mutation ($guid: EntityGuid!, $dashboard: DashboardInput!) {
       dashboardUpdate(guid: $guid, dashboard: $dashboard) {
         entityResult {
@@ -240,14 +340,14 @@ class NewRelicUpdater:
 
     def _update_dashboard(self, guid: str, dashboard: Dashboard) -> None:
         data = self.client.call(
-            self._UPDATE, {"guid": guid, "dashboard": self._dashboard_input(dashboard)}
+            self._DASHBOARD_UPDATE, {"guid": guid, "dashboard": self._dashboard_input(dashboard)}
         )
         result = data["dashboardUpdate"]
         if result["errors"]:
             raise NewRelicUpdaterError(f"dashboardUpdate: {result['errors']}")
 
     # language=graphql
-    _DELETE = """
+    _DASHBOARD_DELETE = """
     mutation ($guid: EntityGuid!) {
       dashboardDelete(guid: $guid) {
         status
@@ -260,7 +360,39 @@ class NewRelicUpdater:
     """
 
     def _delete_dashboard(self, guid: str) -> None:
-        data = self.client.call(self._DELETE, {"guid": guid})
+        data = self.client.call(self._DASHBOARD_DELETE, {"guid": guid})
         result = data["dashboardDelete"]
         if result["errors"]:
             raise NewRelicUpdaterError(f"dashboardDelete: {result['errors']}")
+
+
+def _collect(roots: Iterable[NrResource]) -> list[NrResource]:
+    """``roots`` plus every resource reachable from them, each object once.
+
+    Following references is what makes an inline resource and one held in a
+    variable the same thing to ``sync()``.
+    """
+    found: dict[int, NrResource] = {}
+
+    def visit(value: object) -> None:
+        if isinstance(value, NrResource):
+            if id(value) in found:
+                return
+            found[id(value)] = value
+        if isinstance(value, NrModel):
+            for _, field in value:
+                visit(field)
+        elif isinstance(value, list | tuple):
+            for item in value:
+                visit(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                visit(item)
+
+    for root in roots:
+        visit(root)
+    return list(found.values())
+
+
+def _of_type(resources: list[NrResource], cls: type[T]) -> list[T]:
+    return [r for r in resources if isinstance(r, cls)]

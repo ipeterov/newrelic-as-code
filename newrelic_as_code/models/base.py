@@ -43,6 +43,17 @@ class NrModel(BaseModel):
         return result
 
 
+class NrResource(NrModel):
+    """Base for models that are a New Relic resource in their own right.
+
+    A resource is anything NerdGraph creates, updates and deletes with its own
+    mutations (a dashboard, an alert policy, ...), as opposed to a part of one
+    (a page, a widget). ``NewRelicUpdater.sync()`` manages every resource it is
+    given plus every resource those reference, so a referenced resource may be
+    written inline or held in a variable — the updater sees the same object.
+    """
+
+
 class NrConfigModel(NrModel):
     """Base for ``rawConfiguration`` config models — adds the raw escape hatch.
 

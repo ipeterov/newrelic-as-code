@@ -116,6 +116,37 @@ def test_dry_run_makes_no_mutations():
     assert updater.calls == []
 
 
+def test_deletes_run_after_all_upserts():
+    updater = FakeUpdater(existing=[_entity("Old"), _entity("Existing")])
+    updater.sync([_dashboard("Existing"), _dashboard("New")])
+    assert updater.calls == [
+        ("update", "guid-Existing"),
+        ("create", "New"),
+        ("delete", "guid-Old"),
+    ]
+
+
+def test_refuses_duplicate_names_in_definitions():
+    updater = FakeUpdater(existing=[])
+    with pytest.raises(NewRelicUpdaterError, match="Duplicate dashboard name"):
+        updater.sync([_dashboard("Dup"), _dashboard("Dup")])
+    assert updater.calls == []
+
+
+def test_same_object_passed_twice_is_one_resource():
+    dashboard = _dashboard("Once")
+    updater = FakeUpdater(existing=[])
+    updater.sync([dashboard, dashboard])
+    assert updater.calls == [("create", "Once")]
+
+
+def test_deprecated_dashboards_keyword_still_works():
+    updater = FakeUpdater(existing=[_entity("Old")])
+    with pytest.warns(DeprecationWarning, match="sync\\(dashboards=...\\) is deprecated"):
+        updater.sync(dashboards=[_dashboard("New")])
+    assert updater.calls == [("create", "New"), ("delete", "guid-Old")]
+
+
 def test_account_id_injected_into_account_less_queries():
     from newrelic_as_code import Layout, LineWidget, NrqlQuery
 
