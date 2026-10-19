@@ -10,7 +10,7 @@ Releases are automated via GitHub Actions. To publish a new version to PyPI:
 2. Commit and push to `main`
 
 The CI workflow will:
-- Run lint and the test suite (across Python 3.12–3.14)
+- Run lint and the test suite (across Python 3.11–3.14)
 - Check if the version in `pyproject.toml` is higher than what's on PyPI
 - If yes, build and publish the new version
 
