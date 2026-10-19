@@ -45,6 +45,9 @@ class FakeUpdater(NewRelicUpdater):
     def _fake_call(self, query, variables):
         if "entitySearch" in query:
             nrql = variables["query"]
+            if "type = 'DASHBOARD'" not in nrql:
+                # Other kinds (alert policies) are empty in this account.
+                return {"actor": {"entitySearch": {"results": {"entities": []}}}}
             if f"tags.`{TAG_KEY}`" in nrql:
                 # _managed_entities: all managed entities in the account.
                 entities = [e for e in self._existing.values() if _is_managed(e)]

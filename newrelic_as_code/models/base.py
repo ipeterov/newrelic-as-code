@@ -34,12 +34,18 @@ class NrModel(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    def as_nr_dict(self) -> dict[str, Any]:
+    def as_nr_dict(self, *, nulls: bool = False) -> dict[str, Any]:
+        """Render to NerdGraph JSON.
+
+        ``nulls=True`` keeps unset fields as explicit nulls instead, at every
+        level. That's for update mutations that leave an omitted field
+        unchanged: sending null resets it, so the result matches the model.
+        """
         result: dict[str, Any] = {}
         for name, value in self:
-            if value is None:
+            if value is None and not nulls:
                 continue
-            result[_snake_to_camel(name)] = _render(value)
+            result[_snake_to_camel(name)] = _render(value, nulls=nulls)
         return result
 
 
@@ -71,12 +77,14 @@ class NrConfigModel(NrModel):
         return result
 
 
-def _render(value: Any) -> Any:
+def _render(value: Any, *, nulls: bool = False) -> Any:
     """Recursively render nested models / collections to plain JSON values."""
     if isinstance(value, NrModel):
-        return value.as_nr_dict()
+        # Models that override as_nr_dict without ``nulls`` (dashboard parts)
+        # are never rendered with nulls, so only pass it when it's set.
+        return value.as_nr_dict(nulls=True) if nulls else value.as_nr_dict()
     if isinstance(value, list):
-        return [_render(v) for v in value]
+        return [_render(v, nulls=nulls) for v in value]
     if isinstance(value, dict):
-        return {k: _render(v) for k, v in value.items()}
+        return {k: _render(v, nulls=nulls) for k, v in value.items()}
     return value

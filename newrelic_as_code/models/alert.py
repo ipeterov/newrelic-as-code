@@ -132,8 +132,8 @@ class _NrqlCondition(NrResource):
     violation_time_limit_seconds: int | None = None
     target_entity: str | None = None
 
-    def as_nr_dict(self) -> dict[str, Any]:
-        result = super().as_nr_dict()
+    def as_nr_dict(self, *, nulls: bool = False) -> dict[str, Any]:
+        result = super().as_nr_dict(nulls=nulls)
         del result["policy"]
         return result
 
