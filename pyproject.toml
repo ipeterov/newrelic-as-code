@@ -50,7 +50,9 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "--tb=short"
+# The Claude Code bash guard is documented and tested by its doctests.
+addopts = "--tb=short --doctest-modules"
+testpaths = ["tests", ".claude/hooks"]
 
 [tool.ruff]
 line-length = 100  # Soft target
@@ -127,3 +129,5 @@ combine-as-imports = true
 "newrelic_as_code/__init__.py" = ["RUF022"]
 # Reconcile tests deliberately reach into private reconcile internals.
 "tests/**" = ["SLF001"]
+# Claude Code hooks are standalone scripts, not a package.
+".claude/hooks/**" = ["INP001"]
