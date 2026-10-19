@@ -10,6 +10,26 @@ the single source of what the package exposes.
 from importlib.metadata import PackageNotFoundError, version
 
 from .client import EU_ENDPOINT, US_ENDPOINT, NerdGraphClient, NewRelicUpdaterError
+from .models.alert import (
+    AggregationMethod,
+    AlertPolicy,
+    AnyNrqlCondition,
+    BaselineDirection,
+    BaselineTerm,
+    ConditionNrql,
+    Expiration,
+    FillOption,
+    IncidentPreference,
+    NrqlBaselineCondition,
+    NrqlStaticCondition,
+    Prediction,
+    Priority,
+    Signal,
+    SignalSeasonality,
+    StaticOperator,
+    StaticTerm,
+    ThresholdOccurrences,
+)
 from .models.config.common import (
     BillboardThreshold,
     ColorOverride,
@@ -133,4 +153,23 @@ __all__ = [
     "VariableOptions",
     "VariableType",
     "ReplacementStrategy",
+    # -- alerts -----------------------------------------------------------------
+    "AlertPolicy",
+    "IncidentPreference",
+    "AnyNrqlCondition",
+    "NrqlStaticCondition",
+    "NrqlBaselineCondition",
+    "ConditionNrql",
+    "StaticTerm",
+    "StaticOperator",
+    "BaselineTerm",
+    "BaselineDirection",
+    "Priority",
+    "ThresholdOccurrences",
+    "Prediction",
+    "Signal",
+    "AggregationMethod",
+    "FillOption",
+    "SignalSeasonality",
+    "Expiration",
 ]
