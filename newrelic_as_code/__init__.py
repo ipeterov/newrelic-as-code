@@ -1,4 +1,4 @@
-"""Define New Relic dashboards as code and reconcile them to an account.
+"""Define New Relic dashboards and alerts as code and reconcile them to an account.
 
 This module is the package's public API. Everything a consumer needs is
 importable straight from ``newrelic_as_code``; the internal module split
